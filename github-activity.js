@@ -55,8 +55,8 @@ const KNOWN_EVENT_TYPES = [
  *
  * Flags can appear in any order, before or after the username, e.g. both
  * of these are valid:
- *   github-activity kamranahmedse --limit 5
- *   github-activity --type PushEvent kamranahmedse
+ *   github-activity bu1k3m --limit 5
+ *   github-activity --type PushEvent bu1k3m
  */
 function parseArgs() {
   const args = process.argv.slice(2); // drop "node" and the script path
@@ -146,10 +146,10 @@ function printUsageAndExit(message) {
   );
   console.error("  --json           print raw JSON instead of formatted text");
   console.error("\nExamples:");
-  console.error("  github-activity kamranahmedse");
-  console.error("  github-activity kamranahmedse --limit 5");
-  console.error("  github-activity kamranahmedse --type PushEvent");
-  console.error("  github-activity kamranahmedse --limit 3 --json");
+  console.error("  github-activity bu1k3m");
+  console.error("  github-activity bu1k3m --limit 5");
+  console.error("  github-activity bu1k3m --type PushEvent");
+  console.error("  github-activity bu1k3m --limit 3 --json");
   process.exit(1);
 }
 
