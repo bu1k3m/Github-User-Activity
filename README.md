@@ -44,11 +44,11 @@ node github-activity.js bu1k3m
 Example output:
 
 ```
-Recent activity for kamranahmedse:
+Recent activity for bu1k3m:
 
-- Pushed 3 commits to kamranahmedse/developer-roadmap
-- Opened an issue in kamranahmedse/developer-roadmap
-- Starred kamranahmedse/developer-roadmap
+- Pushed 3 commits to bu1k3m/developer-roadmap
+- Opened an issue in bu1k3m/developer-roadmap
+- Starred bu1k3m/developer-roadmap
 ```
 
 ### Optional flags
@@ -89,7 +89,8 @@ installed.
 Now, from any directory:
 
 ```bash
-github-activity kamranahmedse
+github-activity bu1k3m
+
 ```
 
 To remove the global command later:
