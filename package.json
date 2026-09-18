@@ -1,0 +1,16 @@
+{
+  "name": "github-activity-cli",
+  "version": "1.0.0",
+  "description": "A zero-dependency CLI to fetch and display a GitHub user's recent activity.",
+  "main": "github-activity.js",
+  "bin": {
+    "github-activity": "./github-activity.js"
+  },
+  "scripts": {
+    "start": "node github-activity.js"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "license": "MIT"
+}
