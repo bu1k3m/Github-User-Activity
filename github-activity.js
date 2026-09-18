@@ -66,6 +66,7 @@ function parseArgs() {
     limit: null,
     type: null,
     json: false,
+    token: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -106,6 +107,16 @@ function parseArgs() {
       continue;
     }
 
+    if (arg === "--token") {
+      const value = args[i + 1];
+      if (!value) {
+        printUsageAndExit("--token requires a value, e.g. --token ghp_xxx");
+      }
+      options.token = value;
+      i++; // skip the value we just consumed
+      continue;
+    }
+
     if (arg.startsWith("--")) {
       printUsageAndExit(`Unknown flag: ${arg}`);
     }
@@ -132,6 +143,14 @@ function parseArgs() {
     );
   }
 
+  // A token supplied via --token wins; otherwise fall back to the
+  // GITHUB_TOKEN environment variable, if set. Using an env var means you
+  // never have to type your token directly into a command (which would
+  // otherwise get saved in your shell history).
+  if (!options.token && process.env.GITHUB_TOKEN) {
+    options.token = process.env.GITHUB_TOKEN;
+  }
+
   return options;
 }
 
@@ -145,11 +164,18 @@ function printUsageAndExit(message) {
     "  --type <Type>    show only events of this type (e.g. PushEvent)",
   );
   console.error("  --json           print raw JSON instead of formatted text");
+  console.error(
+    "  --token <t>      GitHub personal access token (raises rate limit to 5,000/hr)",
+  );
+  console.error(
+    "                   (or set the GITHUB_TOKEN environment variable instead)",
+  );
   console.error("\nExamples:");
   console.error("  github-activity bu1k3m");
   console.error("  github-activity bu1k3m --limit 5");
   console.error("  github-activity bu1k3m --type PushEvent");
   console.error("  github-activity bu1k3m --limit 3 --json");
+  console.error("  GITHUB_TOKEN=ghp_xxx github-activity bu1k3m");
   process.exit(1);
 }
 
@@ -164,17 +190,29 @@ function printUsageAndExit(message) {
  * GitHub's API requires:
  *   - an explicit User-Agent header (requests without one are rejected), and
  *   - an Accept header naming the API version we want.
+ *
+ * If a token is supplied (via --token or GITHUB_TOKEN), it's sent as a
+ * Bearer token. Authenticated requests are counted against a much higher
+ * rate limit: 5,000/hour instead of 60/hour for unauthenticated requests.
+ * A fine-grained personal access token needs no special scopes for this
+ * read-only, public-data endpoint.
  */
-function fetchGithubEvents(username) {
+function fetchGithubEvents(username, token) {
   return new Promise((resolve, reject) => {
+    const headers = {
+      "User-Agent": "github-activity-cli", // required by GitHub's API
+      Accept: "application/vnd.github+json",
+    };
+
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
     const options = {
       hostname: "api.github.com",
       path: `/users/${encodeURIComponent(username)}/events`,
       method: "GET",
-      headers: {
-        "User-Agent": "github-activity-cli", // required by GitHub's API
-        Accept: "application/vnd.github+json",
-      },
+      headers,
     };
 
     const request = https.request(options, (response) => {
@@ -187,7 +225,14 @@ function fetchGithubEvents(username) {
       });
 
       response.on("end", () => {
-        handleResponseEnd(response, rawData, username, resolve, reject);
+        handleResponseEnd(
+          response,
+          rawData,
+          username,
+          Boolean(token),
+          resolve,
+          reject,
+        );
       });
     });
 
@@ -213,7 +258,14 @@ function fetchGithubEvents(username) {
  * Step 3: Interpret the HTTP status code and either resolve with the
  * parsed JSON or reject with a helpful, human-readable error.
  */
-function handleResponseEnd(response, rawData, username, resolve, reject) {
+function handleResponseEnd(
+  response,
+  rawData,
+  username,
+  usedToken,
+  resolve,
+  reject,
+) {
   const statusCode = response.statusCode;
 
   // GitHub returns 404 when the username does not exist.
@@ -222,8 +274,19 @@ function handleResponseEnd(response, rawData, username, resolve, reject) {
     return;
   }
 
+  // GitHub returns 401 when a token was supplied but is invalid or expired.
+  if (statusCode === 401) {
+    reject(
+      new Error(
+        "GitHub rejected the provided token (invalid or expired). Check your --token or GITHUB_TOKEN value.",
+      ),
+    );
+    return;
+  }
+
   // GitHub returns 403 (sometimes 429) when you've hit the rate limit for
-  // unauthenticated requests (60 requests/hour per IP).
+  // unauthenticated requests (60 requests/hour per IP), or an authenticated
+  // request has exhausted its 5,000/hour allowance.
   if (statusCode === 403 || statusCode === 429) {
     const resetHeader = response.headers["x-ratelimit-reset"];
     let resetMessage = "";
@@ -231,11 +294,10 @@ function handleResponseEnd(response, rawData, username, resolve, reject) {
       const resetDate = new Date(Number(resetHeader) * 1000);
       resetMessage = ` Rate limit resets at ${resetDate.toLocaleTimeString()}.`;
     }
-    reject(
-      new Error(
-        `GitHub API rate limit exceeded (unauthenticated requests are limited to 60/hour).${resetMessage}`,
-      ),
-    );
+    const hint = usedToken
+      ? ""
+      : " Tip: pass --token <personal-access-token> or set GITHUB_TOKEN to raise the limit to 5,000/hour.";
+    reject(new Error(`GitHub API rate limit exceeded.${resetMessage}${hint}`));
     return;
   }
 
@@ -403,7 +465,7 @@ async function main() {
   const options = parseArgs();
 
   try {
-    const events = await fetchGithubEvents(options.username);
+    const events = await fetchGithubEvents(options.username, options.token);
     displayEvents(events, options);
   } catch (error) {
     console.error(`Error: ${error.message}`);
