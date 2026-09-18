@@ -38,7 +38,7 @@ node github-activity.js <username>
 Example:
 
 ```bash
-node github-activity.js kamranahmedse
+node github-activity.js bu1k3m
 ```
 
 Example output:
