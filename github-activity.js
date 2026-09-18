@@ -7,8 +7,8 @@
  * and prints it to the terminal.
  *
  * Usage:
- *   node github-activity.js bu1k3m
- *   github-activity bu1k3m          (after `npm link`, see README)
+ *   node github-activity.js <username>
+ *   github-activity <username>          (after `npm link`, see README)
  *
  * Only Node's built-in modules are used (https, process) -- no npm packages.
  */
@@ -18,41 +18,138 @@
 const https = require("https");
 
 /**
- * Step 1: Read the username from the command-line arguments.
+ * The full list of GitHub event types this tool knows how to format.
+ * Used both to validate the --type flag and to build the usage message.
+ */
+const KNOWN_EVENT_TYPES = [
+  "PushEvent",
+  "IssuesEvent",
+  "IssueCommentEvent",
+  "PullRequestEvent",
+  "PullRequestReviewEvent",
+  "PullRequestReviewCommentEvent",
+  "WatchEvent",
+  "ForkEvent",
+  "CreateEvent",
+  "DeleteEvent",
+  "ReleaseEvent",
+  "PublicEvent",
+  "MemberEvent",
+  "GollumEvent",
+  "CommitCommentEvent",
+];
+
+/**
+ * Step 1: Parse the command-line arguments into a structured options object.
  *
  * process.argv looks like:
  *   [0] path to the node binary
  *   [1] path to this script
- *   [2] the first real argument the user typed -- our username
+ *   [2..] the real arguments -- a mix of the username and flags
+ *
+ * Supported flags:
+ *   --limit <n>   only show the first n events (after filtering)
+ *   --type <Type> only show events of this type, e.g. PushEvent
+ *   --json        print the raw filtered/limited data as JSON instead of
+ *                 formatted text
+ *
+ * Flags can appear in any order, before or after the username, e.g. both
+ * of these are valid:
+ *   github-activity kamranahmedse --limit 5
+ *   github-activity --type PushEvent kamranahmedse
  */
-function getUsernameFromArgs() {
+function parseArgs() {
   const args = process.argv.slice(2); // drop "node" and the script path
 
-  if (args.length === 0) {
-    printUsageAndExit("Missing argument: please provide a GitHub username.");
+  const options = {
+    username: null,
+    limit: null,
+    type: null,
+    json: false,
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === "--limit") {
+      const value = args[i + 1];
+      const parsedLimit = Number(value);
+      if (!value || !Number.isInteger(parsedLimit) || parsedLimit <= 0) {
+        printUsageAndExit(
+          "--limit requires a positive whole number, e.g. --limit 5",
+        );
+      }
+      options.limit = parsedLimit;
+      i++; // skip the value we just consumed
+      continue;
+    }
+
+    if (arg === "--type") {
+      const value = args[i + 1];
+      if (!value) {
+        printUsageAndExit(
+          "--type requires an event type, e.g. --type PushEvent",
+        );
+      }
+      if (!KNOWN_EVENT_TYPES.includes(value)) {
+        printUsageAndExit(
+          `"${value}" isn't a recognized event type.\nKnown types: ${KNOWN_EVENT_TYPES.join(", ")}`,
+        );
+      }
+      options.type = value;
+      i++; // skip the value we just consumed
+      continue;
+    }
+
+    if (arg === "--json") {
+      options.json = true;
+      continue;
+    }
+
+    if (arg.startsWith("--")) {
+      printUsageAndExit(`Unknown flag: ${arg}`);
+    }
+
+    // Anything that isn't a recognized flag is treated as the username.
+    if (options.username === null) {
+      options.username = arg.trim();
+    } else {
+      printUsageAndExit(`Unexpected extra argument: ${arg}`);
+    }
   }
 
-  const username = args[0].trim();
+  if (!options.username) {
+    printUsageAndExit("Missing argument: please provide a GitHub username.");
+  }
 
   // Basic sanity check: GitHub usernames may only contain alphanumeric
   // characters and single hyphens, and cannot start/end with a hyphen.
   const validUsernamePattern =
     /^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/;
-  if (!validUsernamePattern.test(username)) {
+  if (!validUsernamePattern.test(options.username)) {
     printUsageAndExit(
-      `"${username}" doesn't look like a valid GitHub username.`,
+      `"${options.username}" doesn't look like a valid GitHub username.`,
     );
   }
 
-  return username;
+  return options;
 }
 
 function printUsageAndExit(message) {
   console.error(`Error: ${message}`);
   console.error("\nUsage:");
-  console.error("  github-activity <username>");
-  console.error("\nExample:");
-  console.error("  github-activity bu1k3m");
+  console.error("  github-activity <username> [options]");
+  console.error("\nOptions:");
+  console.error("  --limit <n>      show only the first n events");
+  console.error(
+    "  --type <Type>    show only events of this type (e.g. PushEvent)",
+  );
+  console.error("  --json           print raw JSON instead of formatted text");
+  console.error("\nExamples:");
+  console.error("  github-activity kamranahmedse");
+  console.error("  github-activity kamranahmedse --limit 5");
+  console.error("  github-activity kamranahmedse --type PushEvent");
+  console.error("  github-activity kamranahmedse --limit 3 --json");
   process.exit(1);
 }
 
@@ -259,17 +356,42 @@ function capitalize(word) {
 }
 
 /**
- * Step 5: Print the formatted activity list, or a friendly message if the
- * user has no recent public activity.
+ * Step 5: Print the formatted activity list, or a friendly message if
+ * nothing is left to show after filtering.
+ *
+ * `options` is the object returned by parseArgs(): { username, limit, type, json }
  */
-function displayEvents(events, username) {
-  if (!Array.isArray(events) || events.length === 0) {
-    console.log(`${username} has no recent public activity.`);
+function displayEvents(events, options) {
+  let filteredEvents = Array.isArray(events) ? events : [];
+
+  // Apply --type filter first, so --limit counts only matching events.
+  if (options.type) {
+    filteredEvents = filteredEvents.filter(
+      (event) => event.type === options.type,
+    );
+  }
+
+  // Apply --limit after filtering.
+  if (options.limit) {
+    filteredEvents = filteredEvents.slice(0, options.limit);
+  }
+
+  // --json bypasses the human-readable formatting entirely.
+  if (options.json) {
+    console.log(JSON.stringify(filteredEvents, null, 2));
     return;
   }
 
-  console.log(`Recent activity for ${username}:\n`);
-  events.forEach((event) => {
+  if (filteredEvents.length === 0) {
+    const typeNote = options.type ? ` of type "${options.type}"` : "";
+    console.log(
+      `${options.username} has no recent public activity${typeNote}.`,
+    );
+    return;
+  }
+
+  console.log(`Recent activity for ${options.username}:\n`);
+  filteredEvents.forEach((event) => {
     console.log(`- ${formatEvent(event)}`);
   });
 }
@@ -278,11 +400,11 @@ function displayEvents(events, username) {
  * Step 6: Wire everything together.
  */
 async function main() {
-  const username = getUsernameFromArgs();
+  const options = parseArgs();
 
   try {
-    const events = await fetchGithubEvents(username);
-    displayEvents(events, username);
+    const events = await fetchGithubEvents(options.username);
+    displayEvents(events, options);
   } catch (error) {
     console.error(`Error: ${error.message}`);
     process.exit(1);
