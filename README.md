@@ -1,3 +1,5 @@
+https://roadmap.sh/projects/github-user-activity
+
 # github-activity
 
 A simple, **zero-dependency** command-line tool that fetches a GitHub user's
@@ -12,8 +14,6 @@ required to run it.
 - Node.js v14 or later installed on your machine.
 
 ## Files in this project
-
-https://roadmap.sh/projects/github-user-activity
 
 ```
 github-activity-cli/
@@ -49,6 +49,24 @@ Recent activity for kamranahmedse:
 - Pushed 3 commits to kamranahmedse/developer-roadmap
 - Opened an issue in kamranahmedse/developer-roadmap
 - Starred kamranahmedse/developer-roadmap
+```
+
+### Optional flags
+
+```bash
+node github-activity.js <username> [--limit <n>] [--type <EventType>] [--json]
+```
+
+- `--limit <n>` — show only the first `n` events (after any `--type` filter)
+- `--type <EventType>` — show only events of one type, e.g. `PushEvent`,
+  `WatchEvent`, `IssuesEvent`, `PullRequestEvent`, `ForkEvent`, `CreateEvent`
+- `--json` — print the filtered/limited events as raw JSON instead of
+  formatted text
+  Flags can go before or after the username, e.g. both of these work:
+
+```bash
+node github-activity.js kamranahmedse --limit 5
+node github-activity.js --type PushEvent kamranahmedse
 ```
 
 That's enough to use the tool. The steps below are optional and let you
